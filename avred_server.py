@@ -4,13 +4,14 @@ import logging
 from flask import Flask, request, jsonify
 from json import load
 from sys import platform
-from scanner import scan
+from scanner import scan_data, scan_download
 from os import remove
 from os.path import join
 
 
 app = Flask(__name__)
 conf = {}
+
 
 @app.route("/")
 def index():
@@ -19,17 +20,34 @@ def index():
 		"api": {
 			"GET /": "this screen",
 			"GET /test": "test if config works",
-			"POST /scan": "scan a file, body=virus_bytes"
+			"POST /scan_data": "scan a file, body=virus_bytes",
+			"GET /scan_down?url=<u>": "scan a file, u=download_url"
 		}
 	})
 
 
 @app.route("/scan", methods=["POST"])
-def scan_route():
+def scan_data_route():
 	contents = request.get_data()
 	try:
 		return jsonify({
-			"detected": scan(contents, conf)
+			"detected": scan_data(contents, conf)
+		})
+	except BaseException as e: # handle exceptions at client side too!
+		return jsonify({
+			"exception": str(e)
+		}), 500
+	
+
+@app.route("/scan_down")
+def scan_download_route():
+	if not (download_url := request.args.get("url")):
+		return jsonify({
+			"exception": "No download url supplied"
+		})
+	try: # TODO, check implementation
+		return jsonify({
+			"detected": scan_download(download_url, conf)
 		})
 	except BaseException as e: # handle exceptions at client side too!
 		return jsonify({
@@ -38,17 +56,12 @@ def scan_route():
 
 
 @app.route("/test")
-def test_server(conf=conf):
-	"""
-	Tests if config is working correctly, returns 500 otherwise
-	"""
-	virus = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-	
+def test_server():	
 	try:
 		logging.info("Test malicous...")
-		mal_det = scan(virus, conf)
+		mal_det = scan_data(conf["virus"].encode(), conf)
 		logging.info("Test benign...")
-		benign_det = scan(b"Not malicous", conf)
+		benign_det = scan_data(b"Not malicous", conf)
 
 	except BaseException as e:
 		logging.info("Tests failed, please check config and log above.")

@@ -1,9 +1,14 @@
 {
 	"bind_ip": "0.0.0.0",
 	"port": 8001,
-	"av_timeout": 30,
+	"virus": "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
 	"virus_dir": "C:\\Temp\\",
-	"cmd": [ "amsiscan\\amsiscan.exe", "VIRUS_FILE" ],
+	"cmd": [ "amsiscan\\amsiscan.exe", "VIRUS_FILEPATH_PLACEHOLDER" ],
+	"engine": "AMSI / Defender",
 	"virus_detected": "Result: Detected",
-	"engine": "AMSI / Defender"
+	"av_timeout": 30,
+	"downloader": "$env:localappdata'\\Google\\Chrome\\Application\\chrome.exe'",
+	"download_args": "'--new-window {{download_url}}'",
+	"download_path": "$env:userprofile'\\Downloads\\{{download_name}}'",
+	"download_timeout": 20
 }
