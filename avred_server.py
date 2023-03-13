@@ -19,19 +19,20 @@ def index():
 		"msg": f"AV Server {conf['engine']} is up.",
 		"api": {
 			"GET /": "this screen",
-			"GET /test": "test if config works",
-			"POST /scan_data": "scan a file, body=virus_bytes",
-			"GET /scan_down?url=<u>": "scan a file, u=download_url"
+			"POST /scan/data?ext": "scan a file, ext=file_extension, body=virus_bytes",
+			"GET /scan/down?url=<u>": "scan a file, u=download_url",
+			"GET /test": "test if config works"
 		}
 	})
 
 
-@app.route("/scan", methods=["POST"])
+@app.route("/scan/data", methods=["POST"])
 def scan_data_route():
+	ext = request.args.get("ext")
 	contents = request.get_data()
 	try:
 		return jsonify({
-			"detected": scan_data(contents, conf)
+			"detected": scan_data(contents, conf, ext)
 		})
 	except BaseException as e: # handle exceptions at client side too!
 		return jsonify({
@@ -39,7 +40,7 @@ def scan_data_route():
 		}), 500
 	
 
-@app.route("/scan_down")
+@app.route("/scan/down")
 def scan_download_route():
 	if not (download_url := request.args.get("url")):
 		return jsonify({
@@ -59,9 +60,9 @@ def scan_download_route():
 def test_server():	
 	try:
 		logging.info("Test malicous...")
-		mal_det = scan_data(conf["virus"].encode(), conf)
+		mal_det = scan_data(conf["virus"].encode(), conf, ".exe")
 		logging.info("Test benign...")
-		benign_det = scan_data(b"Not malicous", conf)
+		benign_det = scan_data(b"Not malicous", conf, ".exe")
 
 	except BaseException as e:
 		logging.info("Tests failed, please check config and log above.")
