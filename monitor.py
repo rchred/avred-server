@@ -1,8 +1,40 @@
 import re
 import win32file
 import win32con
+import win32evtlog
+from xmltodict import parse as parse_xml
 from os import path
 from time import time
+
+# search_events('Microsoft-Windows-Windows Defender/Operational', 1116, 1)
+#'Threat Name': 'TrojanDownloader:PowerShell/Linkeldor.A'
+#'Process Name': 'C:\\Windows\\explorer.exe'
+#'Process Name': 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+#'Detection Time': '2023-03-16T15:06:48.946Z'
+#'Path': 'file:_C:\\Users\\hacker\\Downloads\\mimikatz.exe'
+# TODO implement with avred_server.py / scan
+def search_events(log_name, event_id, count, debug=False):
+    result_set = win32evtlog.EvtQuery(
+        log_name, win32evtlog.EvtQueryReverseDirection, f"*[System[(EventID={event_id})]]", None
+    )
+    event_list = []
+    for evt in win32evtlog.EvtNext(result_set, count):
+        evt_data = parse_xml(win32evtlog.EvtRender(evt, 1))
+        event_data = {}
+        for e in evt_data['Event']['EventData']['Data']:
+            if debug: # append all data
+                if '#text' in e:
+                    event_data[e['@Name']] = e['#text']
+            else: # only show proc and 
+                if e['@Name'] == 'Detection Time':
+                    event_data["time"] = e['#text']
+                if e['@Name'] == 'Process Name':
+                    event_data["proc"] = e['#text']
+                if e['@Name'] == 'Path':
+                    event_data["path"] = e['#text']
+        event_list.append(event_data)
+    return event_list
+
 
 # normal  -> created uuid4.tmp, modified uuid4.tmp, rename uuid4.tmp > Unconfirmed xxxxxx.crdownload, rename Unconfirmed xxxxxx.crdownload > test.txt
 # malware -> created uuid4.tmp, modified uuid4.tmp, rename uuid4.tmp > Unconfirmed xxxxxx.crdownload, deleted Unconfirmed xxxxxx.crdownload    
