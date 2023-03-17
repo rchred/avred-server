@@ -4,6 +4,7 @@ from os.path import isfile, join
 from os import path, remove
 from subprocess import PIPE, DEVNULL, run, TimeoutExpired, CalledProcessError
 from random import choice
+from selenium import webdriver
 from string import ascii_letters
 from threading import Thread
 from time import sleep, time
@@ -18,6 +19,11 @@ logging.basicConfig(
 
 virus_filepath_placeholder = "VIRUS_FILEPATH_PLACEHOLDER"
 stop_signal_filename = "STOP_DOWNLOAD_SCAN.txt"
+
+chrome_options = webdriver.ChromeOptions()
+prefs = {"safebrowsing.enabled": "false"}
+chrome_options.add_experimental_option("prefs", prefs)
+driver = webdriver.Chrome(chrome_options=chrome_options)
 
 
 def save_file(data, filepath):
@@ -85,20 +91,7 @@ def get_download_path_from_url(url, conf):
 	download_name = url.split("/")[-1]
 	download_path = conf["download_path"].replace("{{download_name}}", download_name)
 	download_path = expand_ps_envvars(download_path)
-	return download_path
-
-
-def download_file(download_cmd, conf):
-	try:
-		stdout = run(
-			download_cmd,
-			stdin=DEVNULL, # do not wait for / accept user input
-			stdout=PIPE,
-			timeout=conf["download_timeout"]
-		).stdout
-		logging.info("Download Result: " + str(stdout))
-	except TimeoutExpired:
-		pass # already handled in scan_download()
+	return download_path	
 
 
 def scan_download(download_url, conf):
@@ -106,32 +99,21 @@ def scan_download(download_url, conf):
 		err = "Download URL not reachable, or status != 200, or empty response."
 		logging.info(err)
 		raise Exception(err)
-	
-	# TODO implement selenium (then implement stop signal better)
-	stop_signal_filepath = path.join(conf["virus_dir"], stop_signal_filename)
 
 	download_path = get_download_path_from_url(download_url, conf)
 	download_folder, _ = download_path.rsplit("\\", 1)
 	
-	chrome_path = conf["downloader"]
-	chrome_args = conf["download_args"].replace("{{download_url}}", download_url)
-
-	cmd = f"powershell -c \"\
-		$p = Start-Process -FilePath {chrome_path} -ArgumentList {chrome_args} -PassThru; $i=3; \
-		While ($i -lt {conf['download_timeout']}) \
-			{{sleep -m 100; $i+=0.1; If ((Test-Path {download_path}) -or (Test-Path {stop_signal_filepath})) \
-				{{break}}\
-			}}; \
-		Stop-Process $p.id -Force\""
-	
 	# try to download the file
 	print("downloading to:", download_path)
-	rm_if_exists(stop_signal_filepath)
-	t = Thread(target=download_file, args=(cmd, conf))
 	start_utc = get_start_as_utc_datetime()
 	start = time()
-	t.start()
-	while not path.isfile(download_path):
+	
+	# TODO, timeout etc
+	print("before")
+	driver.get(download_url)
+	print("after")
+
+	if not path.isfile(download_path):
 		event = get_latest_event()
 		print(event)
 		sleep(1)
@@ -140,16 +122,12 @@ def scan_download(download_url, conf):
 			if download_folder in event.path and "chrome.exe" in event.proc:
 				return True
 			# else: unrelated event, just continue
+		# TODO implement according to selenium above
 		if time() > start+conf["download_timeout"]:
 			err = "File not downloaded, and also not detected as virus."
 			logging.info(err)
 			raise Exception(err)
-		
-	# file is now downloaded, send exit signal to the downloader
-	with open(stop_signal_filepath, "w") as f:
-		f.write("stop")
-	t.join() # wait for the downloader to read the exit signal, then continue here
-	rm_if_exists(stop_signal_filepath)
+	print("downloaded to", download_path)
 
 	# the file is now downloaded to download_path, and not yet detected as a virus
 	# now interact with the file, to check if Defender detects it now
@@ -163,6 +141,7 @@ def scan_download(download_url, conf):
 		return False
 	
 	# file downloaded and successfully interacted, now scan the raw data, TODO: is this even useful now?
+	print("now do scan_cmd")
 	return scan_cmd(download_path, conf)
 
 

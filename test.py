@@ -99,17 +99,18 @@ def test_scan_download():
 	conf = {}
 	load_config(conf)
 	url_mal, url_half_mal, url_not_mal, t = init_download_server()
-	sleep(2) # wait for server startup, TODO: improve, check every sec for server up
+	sleep(1) # wait for server startup, TODO: improve, check every sec for server up
 	
 	print("**** starting download tests...")
 	assert not scan_download(url_not_mal, conf)
 	print("**** benign download ok and removed again")
 	
-	sleep(3) # wait for monitor to finish print
+	# TODO webserver freezes due to last download not released, find fix!
+	sleep(1) # wait for monitor to finish print
 	assert scan_download(url_half_mal, conf)
 	print("**** half malicious download detected")
 	
-	sleep(3) # wait for monitor to finish print
+	sleep(1) # wait for monitor to finish print
 	assert scan_download(url_mal, conf)
 	print("**** malicious download detected")
 	print("** TEST SCAN DOWNLOAD passed")
