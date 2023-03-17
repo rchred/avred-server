@@ -1,13 +1,20 @@
-import logging
-from monitor import monitor_dir
+import requests as req
+from monitor import get_latest_event, get_start_as_utc_datetime
 from os.path import isfile, join
 from os import path, remove
-from subprocess import PIPE, DEVNULL, run, TimeoutExpired
+from subprocess import PIPE, DEVNULL, run, TimeoutExpired, CalledProcessError
 from random import choice
 from string import ascii_letters
 from threading import Thread
-from time import sleep
+from time import sleep, time
 
+import logging
+
+logging.basicConfig(
+	filename="log.txt",
+	format="%(asctime)s - %(levelname)s - %(message)s",
+	level=logging.INFO
+)
 
 virus_filepath_placeholder = "VIRUS_FILEPATH_PLACEHOLDER"
 stop_signal_filename = "STOP_DOWNLOAD_SCAN.txt"
@@ -63,7 +70,15 @@ def rm_if_exists(ps_filepath):
 			remove(filepath)
 		except PermissionError:
 			print(f"[#] Waiting for Windows to release {filepath}")
-			sleep(0.5)
+			sleep(0.1)
+
+
+def check_download_url(url):
+	try:
+		res = req.get(url)
+		return res.status_code == 200 and len(res.text)
+	except req.exceptions.ConnectionError:
+		return False
 
 
 def get_download_path_from_url(url, conf):
@@ -73,10 +88,31 @@ def get_download_path_from_url(url, conf):
 	return download_path
 
 
+def download_file(download_cmd, conf):
+	try:
+		stdout = run(
+			download_cmd,
+			stdin=DEVNULL, # do not wait for / accept user input
+			stdout=PIPE,
+			timeout=conf["download_timeout"]
+		).stdout
+		logging.info("Download Result: " + str(stdout))
+	except TimeoutExpired:
+		pass # already handled in scan_download()
+
+
 def scan_download(download_url, conf):
+	if not check_download_url(download_url):
+		err = "Download URL not reachable, or status != 200, or empty response."
+		logging.info(err)
+		raise Exception(err)
+	
+	# TODO implement selenium (then implement stop signal better)
+	stop_signal_filepath = path.join(conf["virus_dir"], stop_signal_filename)
+
 	download_path = get_download_path_from_url(download_url, conf)
-	download_folder, download_name = download_path.rsplit("\\", 1)
-	stop_signal_filepath = path.join(download_folder, stop_signal_filename)
+	download_folder, _ = download_path.rsplit("\\", 1)
+	
 	chrome_path = conf["downloader"]
 	chrome_args = conf["download_args"].replace("{{download_url}}", download_url)
 
@@ -88,28 +124,46 @@ def scan_download(download_url, conf):
 			}}; \
 		Stop-Process $p.id -Force\""
 	
+	# try to download the file
+	print("downloading to:", download_path)
 	rm_if_exists(stop_signal_filepath)
-	t = Thread(target=monitor_dir, args=(download_folder, download_name, stop_signal_filepath))
+	t = Thread(target=download_file, args=(cmd, conf))
+	start_utc = get_start_as_utc_datetime()
+	start = time()
 	t.start()
-
-	try:
-		stdout = run(
-			cmd,
-			check=False,
-			stdin=DEVNULL, # do not wait for user input
-			stdout=PIPE,
-			timeout=conf["download_timeout"]
-		).stdout
-		logging.info("Download Result: " + str(stdout))
-	except TimeoutExpired: # refactor timeout, replace with monitor_dir
-		logging.info("File not downloaded, already detected as virus.")
-		return True
+	while not path.isfile(download_path):
+		event = get_latest_event()
+		print(event)
+		sleep(1)
+		if event.time > start_utc:
+			# got new defender event, check if this is from our download just now
+			if download_folder in event.path and "chrome.exe" in event.proc:
+				return True
+			# else: unrelated event, just continue
+		if time() > start+conf["download_timeout"]:
+			err = "File not downloaded, and also not detected as virus."
+			logging.info(err)
+			raise Exception(err)
+		
+	# file is now downloaded, send exit signal to the downloader
+	with open(stop_signal_filepath, "w") as f:
+		f.write("stop")
+	t.join() # wait for the downloader to read the exit signal, then continue here
 	rm_if_exists(stop_signal_filepath)
+
+	# the file is now downloaded to download_path, and not yet detected as a virus
+	# now interact with the file, to check if Defender detects it now
+	try:
+		run(f"type {download_path}", check=True, shell=True, stdout=DEVNULL)
+	except CalledProcessError:
+		# Operation did not complete successfully because the file contains a virus or potentially unwanted software.
+		# subprocess.CalledProcessError: Command 'type C:\Users\hacker\Downloads\Audio.zip' returned non-zero exit status 1.
+		# -> detected as Virus
+		logging.info(f"Downloaded, but detected as virus: {get_latest_event()}")
+		return False
 	
-	if not isfile(download_path):
-		return True # also detected as virus
-	
-	return scan_cmd(download_path, conf) # TODO, check if works
+	# file downloaded and successfully interacted, now scan the raw data, TODO: is this even useful now?
+	return scan_cmd(download_path, conf)
 
 
 def scan_cmd(filepath, conf):
@@ -124,7 +178,7 @@ def scan_cmd(filepath, conf):
 			timeout=conf["av_timeout"]
 		).stdout
 	except TimeoutExpired:
-		err = "Did not finish scan within timeout window!"
+		err = "Did not finish scan within timeout window."
 		logging.info(err)
 		raise Exception(err)
 
