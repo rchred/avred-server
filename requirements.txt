@@ -1,2 +1,2 @@
 flask
-pywin32
+win32evtlog
