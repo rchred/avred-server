@@ -2,38 +2,56 @@ import re
 import win32file
 import win32con
 import win32evtlog
+from datetime import datetime, timezone
 from xmltodict import parse as parse_xml
 from os import path
 from time import time
 
-# search_events('Microsoft-Windows-Windows Defender/Operational', 1116, 1)
+
 #'Threat Name': 'TrojanDownloader:PowerShell/Linkeldor.A'
 #'Process Name': 'C:\\Windows\\explorer.exe'
 #'Process Name': 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
 #'Detection Time': '2023-03-16T15:06:48.946Z'
 #'Path': 'file:_C:\\Users\\hacker\\Downloads\\mimikatz.exe'
-# TODO implement with avred_server.py / scan
-def search_events(log_name, event_id, count, debug=False):
+class DefenderEvent:
+    def __init__(self, data):
+        for e in data:
+            if e['@Name'] == 'Detection Time':
+                self.time = datetime.strptime(e['#text'], "%Y-%m-%dT%H:%M:%S.%fZ")
+            if e['@Name'] == 'Process Name':
+                self.proc = e['#text']
+            if e['@Name'] == 'Path':
+                self.path = e['#text']
+
+    def __str__(self):
+        return  self.proc + " -> " + self.path + " @ " + str(self.time)
+
+
+def search_events(log_name, event_id, count):
     result_set = win32evtlog.EvtQuery(
         log_name, win32evtlog.EvtQueryReverseDirection, f"*[System[(EventID={event_id})]]", None
     )
-    event_list = []
+    events = []
     for evt in win32evtlog.EvtNext(result_set, count):
         evt_data = parse_xml(win32evtlog.EvtRender(evt, 1))
-        event_data = {}
-        for e in evt_data['Event']['EventData']['Data']:
-            if debug: # append all data
-                if '#text' in e:
-                    event_data[e['@Name']] = e['#text']
-            else: # only show proc and 
-                if e['@Name'] == 'Detection Time':
-                    event_data["time"] = e['#text']
-                if e['@Name'] == 'Process Name':
-                    event_data["proc"] = e['#text']
-                if e['@Name'] == 'Path':
-                    event_data["path"] = e['#text']
-        event_list.append(event_data)
-    return event_list
+        events.append(DefenderEvent(evt_data['Event']['EventData']['Data']))
+    return events
+
+
+def now_to_utc_timestamp():
+    # defender logs in UTC time, so create a UTC date
+    return datetime.now(tz=timezone.utc).replace(tzinfo=None)
+
+
+# py -c "from time import time; from monitor import *; print(monitor_events(now_to_utc_timestamp(), 100))"
+def monitor_events(later_then, timeout):
+    start = time()
+    while True:
+        latest_event = search_events("Microsoft-Windows-Windows Defender/Operational", 1116, 1)[0]
+        if latest_event.time >= later_then:
+            return latest_event
+        if time() - start >= timeout:
+            return None
 
 
 # normal  -> created uuid4.tmp, modified uuid4.tmp, rename uuid4.tmp > Unconfirmed xxxxxx.crdownload, rename Unconfirmed xxxxxx.crdownload > test.txt
