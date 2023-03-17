@@ -1,6 +1,3 @@
-#import argparse
-import logging
-
 from flask import Flask, request, jsonify
 from json import load
 from sys import platform
@@ -8,6 +5,13 @@ from scanner import scan_data, scan_download
 from os import remove
 from os.path import join
 
+import logging
+
+logging.basicConfig(
+	filename="log.txt",
+	format="%(asctime)s - %(levelname)s - %(message)s",
+	level=logging.INFO
+)
 
 app = Flask(__name__)
 conf = {}
