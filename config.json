@@ -10,5 +10,5 @@
 	"downloader": "$env:localappdata'\\Google\\Chrome\\Application\\chrome.exe'",
 	"download_args": "'--new-window {{download_url}}'",
 	"download_path": "$env:userprofile'\\Downloads\\{{download_name}}'",
-	"download_timeout": 20
+	"eventlog_timeout": 1
 }

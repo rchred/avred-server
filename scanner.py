@@ -6,7 +6,6 @@ from subprocess import PIPE, DEVNULL, run, TimeoutExpired, CalledProcessError
 from random import choice
 from selenium import webdriver
 from string import ascii_letters
-from threading import Thread
 from time import sleep, time
 
 import logging
@@ -23,7 +22,17 @@ stop_signal_filename = "STOP_DOWNLOAD_SCAN.txt"
 chrome_options = webdriver.ChromeOptions()
 prefs = {"safebrowsing.enabled": "false"}
 chrome_options.add_experimental_option("prefs", prefs)
-driver = webdriver.Chrome(chrome_options=chrome_options)
+driver = None
+
+
+def start_webdriver():
+	global driver
+	driver = webdriver.Chrome(chrome_options=chrome_options)
+
+
+def stop_webdriver():
+	if driver:
+		driver.quit()
 
 
 def save_file(data, filepath):
@@ -99,50 +108,45 @@ def scan_download(download_url, conf):
 		err = "Download URL not reachable, or status != 200, or empty response."
 		logging.info(err)
 		raise Exception(err)
+	
+	if not driver:
+		logging.info("Starting webdriver...")
+		start_webdriver()
 
 	download_path = get_download_path_from_url(download_url, conf)
 	download_folder, _ = download_path.rsplit("\\", 1)
 	
 	# try to download the file
-	print("downloading to:", download_path)
 	start_utc = get_start_as_utc_datetime()
-	start = time()
-	
-	# TODO, timeout etc
-	print("before")
 	driver.get(download_url)
-	print("after")
 
-	if not path.isfile(download_path):
+	t = 0
+	inc = 0.01
+	while t < conf["eventlog_timeout"]: # events take about 0.5 sec to enter log
 		event = get_latest_event()
-		print(event)
-		sleep(1)
+		sleep(inc)
+		t += inc
 		if event.time > start_utc:
 			# got new defender event, check if this is from our download just now
 			if download_folder in event.path and "chrome.exe" in event.proc:
 				return True
 			# else: unrelated event, just continue
-		# TODO implement according to selenium above
-		if time() > start+conf["download_timeout"]:
-			err = "File not downloaded, and also not detected as virus."
-			logging.info(err)
-			raise Exception(err)
-	print("downloaded to", download_path)
+			
+	logging.info(f"No event on download: {download_path}")
 
 	# the file is now downloaded to download_path, and not yet detected as a virus
 	# now interact with the file, to check if Defender detects it now
 	try:
 		run(f"type {download_path}", check=True, shell=True, stdout=DEVNULL)
+		# if the file can be read, then Defender won't detect it as virus with the scan_cmd either
+		logging.info(f"Downloaded and not detected: {get_latest_event()}")
+		return True
 	except CalledProcessError:
 		# Operation did not complete successfully because the file contains a virus or potentially unwanted software.
 		# subprocess.CalledProcessError: Command 'type C:\Users\hacker\Downloads\Audio.zip' returned non-zero exit status 1.
 		# -> detected as Virus
 		logging.info(f"Downloaded, but detected as virus: {get_latest_event()}")
 		return False
-	
-	# file downloaded and successfully interacted, now scan the raw data, TODO: is this even useful now?
-	print("now do scan_cmd")
-	return scan_cmd(download_path, conf)
 
 
 def scan_cmd(filepath, conf):

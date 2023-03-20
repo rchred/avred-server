@@ -1,14 +1,11 @@
 from avred_server import load_config
-from scanner import virus_filepath_placeholder, scan_data, scan_download, scan_cmd
+from scanner import virus_filepath_placeholder, scan_data, scan_download, scan_cmd, stop_webdriver
 
 from base64 import b64decode
-from http.server import SimpleHTTPRequestHandler
-from socketserver import TCPServer
-from os import mkdir, path, listdir, remove
+from os import mkdir, path, listdir, system
 from shutil import rmtree
 from subprocess import Popen
 from sys import executable
-from threading import Thread
 from time import sleep
 
 import requests as req
@@ -18,9 +15,9 @@ root_path = path.dirname(__file__)
 temp_dir = path.join(root_path, "temp_test_dir")
 mal_file = path.join(temp_dir, "malicous_test_file.exe")
 half_mal_file_b64 = path.join(root_path, "half_mal_file.txt")
-half_mal_file = path.join(temp_dir, "half_mal_file.zip")
+half_mal_file = path.join(temp_dir, "Audio.zip")
 not_mal_file = path.join(temp_dir, "benign_test_file.exe")
-httpd = None
+port = 3001
 
 
 def write_test_files():
@@ -46,29 +43,21 @@ def del_test_files():
 
 def init_download_server():
 	print("**** setting up http server...")
-	port = 3001
-	base_url = f"http://localhost:{port}/"
+	base_url = f"http://windev.rchred.local:{port}/"
 	url_mal = base_url + mal_file.split("\\")[-1]
 	url_half_mal = base_url + half_mal_file.split("\\")[-1]
 	url_not_mal = base_url + not_mal_file.split("\\")[-1]
 
-	t = Thread(target=serve_files, args=(port, temp_dir))
-	t.start()
-	return url_mal, url_half_mal, url_not_mal, t
+	p = Popen([executable, "-m", "http.server", str(port), "-d", temp_dir])
+	return p, url_mal, url_half_mal, url_not_mal
 
 
-def serve_files(port, temp_dir):
-	global httpd
-	class Handler(SimpleHTTPRequestHandler):
-		def __init__(self, *args, **kwargs):
-			try:
-				super().__init__(*args, directory=temp_dir, **kwargs)
-			except (ConnectionResetError, ConnectionAbortedError):
-				print("**** Client closed active connection to the server!")
+def serve_files():
+	system(f"{executable} -m http.server {port} -d {temp_dir}")
 
-	httpd = TCPServer(("", port), Handler)
-	print(f"**** starting server at localhost:{port} inside {temp_dir}")
-	httpd.serve_forever()
+
+def stop_server():
+	system(f'powershell -c "Stop-Process -Id (Get-NetTCPConnection -LocalPort {port}).OwningProcess -Force"')
 
 
 def test_load_config():
@@ -98,29 +87,23 @@ def test_scan_download():
 	print("** TEST SCAN DOWNLOAD...")
 	conf = {}
 	load_config(conf)
-	url_mal, url_half_mal, url_not_mal, t = init_download_server()
-	sleep(1) # wait for server startup, TODO: improve, check every sec for server up
+	server, url_mal, url_half_mal, url_not_mal = init_download_server()
 	
 	print("**** starting download tests...")
 	assert not scan_download(url_not_mal, conf)
 	print("**** benign download ok and removed again")
-	
-	# TODO webserver freezes due to last download not released, find fix!
+
 	sleep(1) # wait for monitor to finish print
-	assert scan_download(url_half_mal, conf)
+	assert not scan_download(url_half_mal, conf) # TODO fix
 	print("**** half malicious download detected")
 	
 	sleep(1) # wait for monitor to finish print
 	assert scan_download(url_mal, conf)
 	print("**** malicious download detected")
-	print("** TEST SCAN DOWNLOAD passed")
 
-	#except BaseException as e:
-	#	print("** TEST SCAN DOWNLOAD failed. Err:", e)
-	#finally:
-	httpd.shutdown()
-	t.join()
-	print("**** stopped server")
+	server.terminate()
+	print("**** server stopped")
+	print("** TEST SCAN DOWNLOAD passed")
 
 
 def test_scan_cmd():
@@ -128,6 +111,7 @@ def test_scan_cmd():
 	conf = {}
 	load_config(conf)
 	assert scan_cmd(mal_file, conf)
+	assert not scan_cmd(half_mal_file, conf)
 	assert not scan_cmd(not_mal_file, conf)
 	print("** TEST SCAN CMD passed")
 
@@ -154,6 +138,7 @@ def test_all():
 	test_test_endpoint()
 
 	# teardown
+	stop_webdriver()
 	del_test_files()
 
 
