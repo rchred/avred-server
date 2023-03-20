@@ -15,7 +15,7 @@ root_path = path.dirname(__file__)
 temp_dir = path.join(root_path, "temp_test_dir")
 mal_file = path.join(temp_dir, "malicous_test_file.exe")
 half_mal_file_b64 = path.join(root_path, "half_mal_file.txt")
-half_mal_file = path.join(temp_dir, "Audio.zip")
+half_mal_file = path.join(temp_dir, "half_malicious_test_file.zip")
 not_mal_file = path.join(temp_dir, "benign_test_file.exe")
 port = 3001
 
@@ -94,7 +94,7 @@ def test_scan_download():
 	print("**** benign download ok and removed again")
 
 	sleep(1) # wait for monitor to finish print
-	assert not scan_download(url_half_mal, conf) # TODO fix
+	assert not scan_download(url_half_mal, conf) # TODO fix (should be detected, F Defender)
 	print("**** half malicious download detected")
 	
 	sleep(1) # wait for monitor to finish print

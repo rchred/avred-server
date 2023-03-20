@@ -5,8 +5,9 @@ from os import path, remove
 from subprocess import PIPE, DEVNULL, run, TimeoutExpired, CalledProcessError
 from random import choice
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from string import ascii_letters
-from time import sleep, time
+from time import sleep
 
 import logging
 
@@ -25,9 +26,17 @@ chrome_options.add_experimental_option("prefs", prefs)
 driver = None
 
 
-def start_webdriver():
+def check_webdriver():
 	global driver
-	driver = webdriver.Chrome(chrome_options=chrome_options)
+	if driver:
+		try:
+			driver.get("about:blank")
+		except WebDriverException:
+			logging.info("Restarting webdriver...")
+			driver = webdriver.Chrome(chrome_options=chrome_options)
+	else:
+		driver = webdriver.Chrome(chrome_options=chrome_options)
+		logging.info("Starting webdriver...")
 
 
 def stop_webdriver():
@@ -109,9 +118,7 @@ def scan_download(download_url, conf):
 		logging.info(err)
 		raise Exception(err)
 	
-	if not driver:
-		logging.info("Starting webdriver...")
-		start_webdriver()
+	check_webdriver()
 
 	download_path = get_download_path_from_url(download_url, conf)
 	download_folder, _ = download_path.rsplit("\\", 1)
@@ -128,7 +135,9 @@ def scan_download(download_url, conf):
 		t += inc
 		if event.time > start_utc:
 			# got new defender event, check if this is from our download just now
+			# e.g.: Detected file as virus: C:\Users\hacker\AppData\Local\Google\Chrome\Application\chrome.exe -> file:_C:\Users\hacker\Downloads\76ed2689-b36a-4978-ba59-ef86b6e8fb97.tmp @ 2023-03-20 09:06:19.718000
 			if download_folder in event.path and "chrome.exe" in event.proc:
+				logging.info(f"Event: {event}")
 				return True
 			# else: unrelated event, just continue
 			
@@ -139,14 +148,16 @@ def scan_download(download_url, conf):
 	try:
 		run(f"type {download_path}", check=True, shell=True, stdout=DEVNULL)
 		# if the file can be read, then Defender won't detect it as virus with the scan_cmd either
-		logging.info(f"Downloaded and not detected: {get_latest_event()}")
-		return True
+		logging.info(f"Downloaded and not detected: {download_path}")
+		return False
 	except CalledProcessError:
 		# Operation did not complete successfully because the file contains a virus or potentially unwanted software.
 		# subprocess.CalledProcessError: Command 'type C:\Users\hacker\Downloads\Audio.zip' returned non-zero exit status 1.
 		# -> detected as Virus
 		logging.info(f"Downloaded, but detected as virus: {get_latest_event()}")
-		return False
+		return True
+	finally:
+		delete_file(download_path)
 
 
 def scan_cmd(filepath, conf):
