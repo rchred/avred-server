@@ -1,5 +1,5 @@
 from avred_server import load_config
-from scanner import virus_filepath_placeholder, scan_data, scan_download, scan_cmd, stop_webdriver
+from scanner import virus_filepath_placeholder, scan_data, scan_download, check_webdriver, stop_webdriver
 
 from base64 import b64decode
 from os import mkdir, path, listdir, system
@@ -88,6 +88,8 @@ def test_scan_download():
 	conf = {}
 	load_config(conf)
 	server, url_mal, url_half_mal, url_not_mal = init_download_server()
+	print("**** starting webdriver...")
+	check_webdriver()
 	
 	print("**** starting download tests...")
 	assert not scan_download(url_not_mal, conf)
@@ -106,21 +108,12 @@ def test_scan_download():
 	print("** TEST SCAN DOWNLOAD passed")
 
 
-def test_scan_cmd():
-	print("** TEST SCAN CMD...")
-	conf = {}
-	load_config(conf)
-	assert scan_cmd(mal_file, conf)
-	assert not scan_cmd(half_mal_file, conf)
-	assert not scan_cmd(not_mal_file, conf)
-	print("** TEST SCAN CMD passed")
-
-
 def test_test_endpoint():
 	print("** TEST TEST ENDPOINT...")
 	conf = {}
 	load_config(conf)
 	p = Popen([executable, "avred_server.py"])
+	sleep(1) # wait for startup
 	status = req.get(f"http://localhost:{conf['port']}/test").status_code
 	assert status == 200
 	p.terminate()
@@ -134,7 +127,6 @@ def test_all():
 	test_load_config()
 	test_scan_data()
 	test_scan_download()
-	test_scan_cmd()
 	test_test_endpoint()
 
 	# teardown

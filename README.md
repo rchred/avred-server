@@ -10,7 +10,26 @@ To be used with the AV Reduction [avred](https://github.com/dobin/avred) project
 Returns ```200 {"detected": true}``` if file was detected by AV, or ```200 {"detected": false}``` if it wasn't, or ```500 {"exception": 'error'}``` if there was an error. 
 
 
-### Download Scan:
+### Scan Data:
+```asciiflow
+         ┌────────────┐
+         │avred-server│
+         └─────┬──────┘
+               │
+               │ get filedata
+               │
+         ┌─────▼───────┐   detected  ┌───────────┐
+         │scan filedata├─────────────►return True│
+         └─────┬───────┘             └───────────┘
+               │
+               │ not detected
+               │
+         ┌─────▼──────┐
+         │return False│
+         └────────────┘
+```
+
+### Scan Download:
 ```asciiflow
          ┌──────────┐
          │chrome.exe│
@@ -40,12 +59,6 @@ downloads file │
        │get_latest_event├────────────►return True│
        └───────┬────────┘            └───────────┘
                │
-               │ get filedata
-               │
-         ┌─────▼───────┐   detected  ┌───────────┐
-         │scan filedata├─────────────►return True│
-         └─────┬───────┘             └───────────┘
-               │
                │ not detected
                │
          ┌─────▼──────┐
@@ -59,7 +72,7 @@ downloads file │
 1. install python3,  pip3 & requirements.txt
 	- Windows: download python from https://www.python.org/downloads/, include pip in installation, then open powershell: ```pip install -r requirements.txt```
 	- Linux: ```sudo apt install python3 python3-pip && pip3 install -r requirements.txt```
-2. download [chrome drivers](https://selenium-python.readthedocs.io/installation.html#drivers) for selenium and add them to PATH, else download_scan won't work
+2. download the selenium [chrome driver](https://selenium-python.readthedocs.io/installation.html#drivers) and add them to PATH, or provide the exe's path at ```webdriver.ChromeOptions(<path>)```
 3. check config.json, i.e. see if paths and values make sense for your VM
 4. put the "virus_dir" (default `C:\Temp\`) on the AV exclusion list
 5. Disable sample submission on your AV
